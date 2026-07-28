@@ -104,7 +104,7 @@ docker compose down
 
 ## CI/CD
 
-Pipeline в `.gitlab-ci.yml` запускается при merge request и push в `master` / `main`.
+Pipeline в `.gitlab-ci.yml` запускается при merge request и push в `main`.
 
 | Stage | Job | Действие |
 |---|---|---|
