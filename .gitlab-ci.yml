@@ -1,11 +1,3 @@
-# GitLab CI/CD for my_mlflow
-#
-# Required CI/CD variables (Settings → CI/CD → Variables):
-#   SSH_PRIVATE_KEY  — private key for deploy (masked, protected)
-#   DEPLOY_HOST      — target server hostname or IP
-#   DEPLOY_USER      — SSH user on the server
-#   DEPLOY_PATH      — absolute path to the project on the server
-
 stages:
   - validate
   - build

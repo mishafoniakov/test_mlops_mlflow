@@ -40,12 +40,14 @@ flowchart LR
 ```
 my_mlflow/
 ├── dags/
-│   └── mlflow_iris_demo.py   # DAG: preprocess → train
-├── docker-compose.yml        # Описание стека
-├── Dockerfile                # Образ Airflow с mlflow, scikit-learn
-├── .env.example              # Шаблон переменных окружения
-├── Makefile                  # Команды restart / push
-├── .gitlab-ci.yml            # CI/CD pipeline
+│   └── mlflow_iris_demo.py
+├── docker-compose.yml
+├── Dockerfile
+├── .env.example
+├── Makefile
+├── make.ps1
+├── make.cmd
+├── .gitlab-ci.yml
 └── README.md
 ```
 
@@ -60,10 +62,8 @@ my_mlflow/
 
 ```bash
 cp .env.example .env
-# Отредактируйте .env — подставьте реальные значения вместо фейковых из шаблона
 
 docker compose up -d --build
-# или
 make restart
 ```
 
