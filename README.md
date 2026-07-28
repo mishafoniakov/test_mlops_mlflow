@@ -110,8 +110,7 @@ Pipeline в `.gitlab-ci.yml` запускается при merge request и push
 |---|---|---|
 | validate | `validate:compose` | Проверка `docker-compose.yml` |
 | validate | `validate:dags` | Проверка синтаксиса DAG-файлов |
-| build | `build` | Сборка Docker-образов |
-| deploy | `deploy` | SSH-деплой на сервер (`git pull` + `make restart`), ручной запуск |
+| deploy | `deploy` | SSH-деплой на сервер (`git pull` + `docker compose up`), ручной запуск |
 
 Переменные GitLab CI/CD (`Settings → CI/CD → Variables`):
 
