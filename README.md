@@ -89,6 +89,7 @@ docker compose down
 | Redis | `REDIS_HOST_PORT` |
 | MLflow | `MLFLOW_HOST_PORT` |
 | Airflow | `AIRFLOW_WEBSERVER_HOST_PORT`, `AIRFLOW_ADMIN_USERNAME`, `AIRFLOW_ADMIN_PASSWORD`, `AIRFLOW_ADMIN_EMAIL` |
+| ClickHouse (внешний) | `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB` |
 
 Файл `.env` не коммитится в git.
 

@@ -7,6 +7,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__WEBSERVER__PID: /tmp/airflow-webserver.pid
     MLFLOW_TRACKING_URI: http://mlflow:5000
     REDIS_URL: redis://redis:6379/0
+    AIRFLOW_CONN_CLICKHOUSE_DEFAULT: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}/${CLICKHOUSE_DB}
   volumes:
     - ./dags:/opt/airflow/dags
   depends_on:
@@ -14,6 +15,9 @@ x-airflow-common: &airflow-common
       condition: service_healthy
     redis:
       condition: service_healthy
+  networks:
+    - default
+    - clickhouse_net
 
 services:
   postgres:
@@ -119,3 +123,8 @@ services:
 volumes:
   postgres_data:
   mlflow_artifacts:
+
+networks:
+  clickhouse_net:
+    name: clickhouse_default
+    external: true
