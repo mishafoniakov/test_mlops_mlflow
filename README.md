@@ -1,6 +1,6 @@
 # my_mlflow
 
-Docker-стек для оркестрации ML-пайплайнов: **Apache Airflow** управляет обучением моделей, **MLflow** хранит эксперименты и артефакты, **MinIO** выступает S3-хранилищем, **PostgreSQL** — базой метаданных, **Redis** — промежуточным буфером между задачами.
+Docker-стек для оркестрации ML-пайплайнов: **Apache Airflow** управляет обучением моделей, **MLflow** хранит эксперименты и артефакты, **PostgreSQL** — базой метаданных, **Redis** — промежуточным буфером между задачами.
 
 Демонстрационный DAG `mlflow_iris_demo` обучает `LogisticRegression` на датасете Iris и логирует метрики и модель в MLflow.
 
@@ -15,7 +15,7 @@ flowchart LR
     subgraph Storage
         PG[(PostgreSQL)]
         Redis[(Redis)]
-        MinIO[(MinIO S3)]
+        Artifacts[(MLflow artifacts volume)]
     end
 
     MLflow[MLflow Server]
@@ -23,7 +23,7 @@ flowchart LR
     DAG -->|preprocess| Redis
     DAG -->|train| MLflow
     MLflow --> PG
-    MLflow --> MinIO
+    MLflow --> Artifacts
     Airflow --> PG
 ```
 
@@ -31,7 +31,6 @@ flowchart LR
 |---|---|---|
 | Airflow | Оркестрация DAG-ов | http://localhost:8080 |
 | MLflow | Трекинг экспериментов | http://localhost:5001 |
-| MinIO | Хранение артефактов (S3) | http://localhost:9002 (API), http://localhost:9001 (Console) |
 | PostgreSQL | Метаданные Airflow и MLflow | localhost:5435 |
 | Redis | Передача данных между задачами | localhost:6379 |
 
@@ -71,7 +70,6 @@ make restart
 
 - **Airflow UI** — http://localhost:8080 (логин/пароль из `.env`)
 - **MLflow UI** — http://localhost:5001
-- **MinIO Console** — http://localhost:9001
 
 Включите DAG `mlflow_iris_demo` в Airflow и запустите вручную (schedule отключён).
 
@@ -88,7 +86,6 @@ docker compose down
 | Группа | Переменные |
 |---|---|
 | PostgreSQL | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_HOST_PORT` |
-| MinIO | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_API_HOST_PORT`, `MINIO_CONSOLE_HOST_PORT` |
 | Redis | `REDIS_HOST_PORT` |
 | MLflow | `MLFLOW_HOST_PORT` |
 | Airflow | `AIRFLOW_WEBSERVER_HOST_PORT`, `AIRFLOW_ADMIN_USERNAME`, `AIRFLOW_ADMIN_PASSWORD`, `AIRFLOW_ADMIN_EMAIL` |
@@ -134,6 +131,5 @@ DAG `mlflow_iris_demo` состоит из двух задач:
 - MLflow 2.14.1
 - scikit-learn 1.3.2
 - PostgreSQL 17
-- MinIO (S3-compatible)
 - Redis 7
 - GitLab CI/CD

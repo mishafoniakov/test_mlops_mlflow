@@ -4,6 +4,7 @@ import pickle
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow_clickhouse_plugin.operators.clickhouse import ClickhouseOperator
 
 
 def get_redis():

@@ -41,21 +41,15 @@ function Show-Help {
 function Show-Urls {
     $airflowPort = "8080"
     $mlflowPort = "5001"
-    $minioApi = "9002"
-    $minioConsole = "9001"
     if (Test-Path ".env") {
         Get-Content ".env" | ForEach-Object {
             if ($_ -match "^\s*AIRFLOW_WEBSERVER_HOST_PORT=(.+)$") { $airflowPort = $Matches[1].Trim() }
             if ($_ -match "^\s*MLFLOW_HOST_PORT=(.+)$") { $mlflowPort = $Matches[1].Trim() }
-            if ($_ -match "^\s*MINIO_API_HOST_PORT=(.+)$") { $minioApi = $Matches[1].Trim() }
-            if ($_ -match "^\s*MINIO_CONSOLE_HOST_PORT=(.+)$") { $minioConsole = $Matches[1].Trim() }
         }
     }
     Write-Host ""
     Write-Host "  Airflow UI:     http://localhost:$airflowPort"
     Write-Host "  MLflow UI:      http://localhost:$mlflowPort"
-    Write-Host "  MinIO API:      http://localhost:$minioApi"
-    Write-Host "  MinIO Console:  http://localhost:$minioConsole"
     Write-Host "  Credentials:    see .env"
     Write-Host ""
 }
