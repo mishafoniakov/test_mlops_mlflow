@@ -1,20 +1,26 @@
 .PHONY: help restart push
 
-help: ## Показать список команд
+help:
 	@echo ""
-	@echo "  make restart              Stop, rebuild and start all services"
-	@echo "  make push MSG=\"message\"   git add + commit + push"
+	@echo "  make restart -- Stop, rebuild and start all services"
+	@echo "  make restart_prune -- Stop, clean, rebuild and start all services"
+	@echo "  make push MSG=\"message\" -- git add + commit + push"
 	@echo ""
 	@echo "  Windows: .\\make restart"
 	@echo ""
 
-restart: ## Пересобрать и перезапустить стек
+restart:
 	docker compose down
+	docker compose up -d --build
+
+restart_prune:
+	docker compose down
+	docker system prune -a
 	docker compose up -d --build
 
 MSG ?= update
 
-push: ## git add + commit + push; пример: make push MSG="chore: ..."
+push:
 	git add .
 	@git diff --cached --quiet || git commit -m "$(MSG)"
 	git push -u origin HEAD

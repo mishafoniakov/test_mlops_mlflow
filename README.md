@@ -1,25 +1,27 @@
-# my_mlflow
+# my-mlflow
 
-Docker-стек для оркестрации ML-пайплайнов: **Apache Airflow** управляет обучением моделей, **MLflow** хранит эксперименты и артефакты, **PostgreSQL** — базой метаданных, **Redis** — промежуточным буфером между задачами.
+Docker-стек для оркестрации ML-пайплайнов: **Apache Airflow** управляет обучением, **MLflow** хранит эксперименты и артефакты, **PostgreSQL** — метаданные, **Redis** — буфер между задачами.
 
-Демонстрационный DAG `mlflow_iris_demo` обучает `LogisticRegression` на датасете Iris и логирует метрики и модель в MLflow.
+Демонстрационный DAG `snu_demo` читает VIEW `snu.telemetry_aggregate_temp_c` из внешнего ClickHouse через `ClickHouseHook`, обучает регрессионные модели и логирует метрики/параметры/модель в MLflow.
 
 ## Архитектура
 
 ```mermaid
 flowchart LR
+    CH[(ClickHouse)]
     subgraph Airflow
-        DAG[mlflow_iris_demo]
+        DAG[snu_demo]
     end
 
     subgraph Storage
         PG[(PostgreSQL)]
         Redis[(Redis)]
-        Artifacts[(MLflow artifacts volume)]
+        Artifacts[(MLflow artifacts)]
     end
 
     MLflow[MLflow Server]
 
+    CH -->|data| DAG
     DAG -->|preprocess| Redis
     DAG -->|train| MLflow
     MLflow --> PG
@@ -34,18 +36,24 @@ flowchart LR
 | PostgreSQL | Метаданные Airflow и MLflow | localhost:5435 |
 | Redis | Передача данных между задачами | localhost:6379 |
 
+ClickHouse — **внешний** контейнер в сети `clickhouse_default` (не поднимается этим compose).
+
 ## Структура проекта
 
 ```
-my_mlflow/
+my-mlflow/
 ├── dags/
-│   └── mlflow_iris_demo.py
+│   └── dag_1.py              # DAG snu_demo
+├── scripts/
+│   ├── engines.py            # Redis / ClickHouse helpers
+│   ├── settings.py           # модели sklearn
+│   └── train.py              # обучение + MLflow logging
+├── queries/
+│   └── queries.py            # SQL к ClickHouse
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env.example
-├── Makefile
-├── make.ps1
-├── make.cmd
+├── Makefile / make.ps1 / make.cmd
 ├── .gitlab-ci.yml
 └── README.md
 ```
@@ -55,23 +63,25 @@ my_mlflow/
 ### Требования
 
 - Docker и Docker Compose v2
-- `make` (Git Bash, WSL или `choco install make`)
+- Внешний ClickHouse в сети `clickhouse_default` (БД/VIEW `snu.telemetry_aggregate_temp_c`)
+- На Windows: `.\make restart` (обёртки `make.ps1` / `make.cmd`)
 
 ### Запуск
 
 ```bash
 cp .env.example .env
+# отредактируйте секреты и порты в .env
 
-docker compose up -d --build
-make restart
+.\make restart
+# или: docker compose up -d --build
 ```
 
 После старта:
 
-- **Airflow UI** — http://localhost:8080 (логин/пароль из `.env`)
-- **MLflow UI** — http://localhost:5001
+- **Airflow** — http://localhost:8080 (логин/пароль из `.env`)
+- **MLflow** — http://localhost:5001
 
-Включите DAG `mlflow_iris_demo` в Airflow и запустите вручную (schedule отключён).
+Включите DAG `snu_demo` в Airflow и запустите вручную (schedule отключён).
 
 ### Остановка
 
@@ -81,50 +91,52 @@ docker compose down
 
 ## Переменные окружения
 
-Секреты и хост-порты вынесены в `.env`. Шаблон — `.env.example`.
+Секреты и хост-порты — в `.env` (шаблон `.env.example`). Файл `.env` не коммитится.
 
 | Группа | Переменные |
 |---|---|
 | PostgreSQL | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_HOST_PORT` |
 | Redis | `REDIS_HOST_PORT` |
 | MLflow | `MLFLOW_HOST_PORT` |
-| Airflow | `AIRFLOW_WEBSERVER_HOST_PORT`, `AIRFLOW_ADMIN_USERNAME`, `AIRFLOW_ADMIN_PASSWORD`, `AIRFLOW_ADMIN_EMAIL` |
+| Airflow | `AIRFLOW_WEBSERVER_HOST_PORT`, `AIRFLOW_ADMIN_*` |
 | ClickHouse (внешний) | `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB` |
-
-Файл `.env` не коммитится в git.
 
 ## Makefile
 
 | Команда | Описание |
 |---|---|
-| `make restart` | Пересобрать и перезапустить весь стек |
-| `make push MSG="текст"` | `git add` → `commit` → `push` в текущую ветку |
+| `make restart` / `.\make restart` | `down` → `up -d --build` |
+| `make restart_prune` | то же + `docker system prune -a` |
+| `make push MSG="текст"` | `git add` → `commit` → `push` |
 
 ## CI/CD
 
-Pipeline в `.gitlab-ci.yml` запускается при merge request и push в `main`.
+Pipeline в `.gitlab-ci.yml` — при merge request и push в `main`.
 
 | Stage | Job | Действие |
 |---|---|---|
 | validate | `validate:compose` | Проверка `docker-compose.yml` |
-| validate | `validate:dags` | Проверка синтаксиса DAG-файлов |
-| deploy | `deploy` | SSH-деплой на сервер (`git pull` + `docker compose up`), ручной запуск |
+| validate | `validate:dags` | Синтаксис DAG-файлов |
+| deploy | `deploy` | SSH-деплой (`git pull` + `compose up`), вручную |
 
-Переменные GitLab CI/CD (`Settings → CI/CD → Variables`):
+Переменные GitLab CI/CD: `SSH_PRIVATE_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`.
 
-- `SSH_PRIVATE_KEY`
-- `DEPLOY_HOST`
-- `DEPLOY_USER`
-- `DEPLOY_PATH`
+## Демо-пайплайн (`snu_demo`)
 
-## Демо-пайплайн
+Задачи:
 
-DAG `mlflow_iris_demo` состоит из двух задач:
+1. **data** — `ClickHouseHook` читает `snu.telemetry_aggregate_temp_c`, кладёт DataFrame в Redis  
+2. **preprocessing** — train/test split, фичи/таргет `aggregate_temp_c` → Redis  
+3. **training** — обучает модели из `scripts/settings.py`, логирует params/metrics/model в эксперимент `mlflow_test_snu`
 
-1. **preprocess** — загружает Iris, делит на train/test, сохраняет в Redis
-2. **train** — читает данные из Redis, обучает `LogisticRegression`, логирует accuracy и модель в MLflow
+Connection id: `clickhouse_default` (через `AIRFLOW_CONN_CLICKHOUSE_DEFAULT`).
 
-Результаты эксперимента доступны в MLflow UI (эксперимент `iris_demo`).
+```python
+from airflow_clickhouse_plugin.hooks.clickhouse import ClickHouseHook
+
+ch = ClickHouseHook(clickhouse_conn_id="clickhouse_default")
+rows = ch.execute("SELECT count() FROM snu.telemetry_aggregate_temp_c")
+```
 
 ## Стек технологий
 
@@ -133,4 +145,5 @@ DAG `mlflow_iris_demo` состоит из двух задач:
 - scikit-learn 1.3.2
 - PostgreSQL 17
 - Redis 7
+- ClickHouse (внешний, `clickhouse-driver`)
 - GitLab CI/CD

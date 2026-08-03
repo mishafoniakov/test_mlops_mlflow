@@ -29,7 +29,7 @@ validate:dags:
   stage: validate
   image: python:3.11-slim
   script:
-    - python -m py_compile dags/mlflow_iris_demo.py
+    - python -m py_compile dags/*.py
     - echo "DAG syntax is valid"
 
 deploy:
