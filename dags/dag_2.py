@@ -17,15 +17,15 @@ eng = MLFlowEngines()
 def get_data():
     q = MLFLowQueries()
 
-    df = eng.get_pandas_df(q.regression_query).dropna()
+    df = eng.get_pandas_df(q.classification_query).dropna()
 
     r = eng.get_redis
-    r.setex("regression_df:data", 600, pickle.dumps(df))
+    r.setex("classification_df:data", 600, pickle.dumps(df))
 
 def preprocess_data():
 
     r = eng.get_redis
-    data = pickle.loads(r.get("regression_df:data")) \
+    data = pickle.loads(r.get("classification_df:data")) \
         .sort_values(['ts_month', 
                       'ts_day_year', 
                       'ts_day_month', 
@@ -33,7 +33,7 @@ def preprocess_data():
                       'ts_hour',
                       'ts_minute',
                       'ts_second'])
-    r.delete("regression_df:data")
+    r.delete("classification_df:data")
 
     split_idx = int(len(data) * 0.8)
     train = data.iloc[:split_idx]
@@ -44,11 +44,11 @@ def preprocess_data():
     X_test = test.drop('target', axis=1)
     y_test = test['target']
 
-    r.setex("regression_df:train", 600, pickle.dumps(train))
-    r.setex("regression_df:X_train", 600, pickle.dumps(X_train))
-    r.setex("regression_df:y_train", 600, pickle.dumps(y_train))
-    r.setex("regression_df:X_test", 600, pickle.dumps(X_test))
-    r.setex("regression_df:y_test", 600, pickle.dumps(y_test))
+    r.setex("classification_df:train", 600, pickle.dumps(train))
+    r.setex("classification_df:X_train", 600, pickle.dumps(X_train))
+    r.setex("classification_df:y_train", 600, pickle.dumps(y_train))
+    r.setex("classification_df:X_test", 600, pickle.dumps(X_test))
+    r.setex("classification_df:y_test", 600, pickle.dumps(y_test))
 
 def train_data():
     from mlflow.tracking import MlflowClient
@@ -64,35 +64,35 @@ def train_data():
     mlflow.set_experiment(name)
 
     r = eng.get_redis
-    train = pickle.loads(r.get("regression_df:train"))
-    X_train = pickle.loads(r.get("regression_df:X_train"))
-    X_test = pickle.loads(r.get("regression_df:X_test"))
-    y_train = pickle.loads(r.get("regression_df:y_train"))
-    y_test = pickle.loads(r.get("regression_df:y_test"))
+    train = pickle.loads(r.get("classification_df:train"))
+    X_train = pickle.loads(r.get("classification_df:X_train"))
+    X_test = pickle.loads(r.get("classification_df:X_test"))
+    y_train = pickle.loads(r.get("classification_df:y_train"))
+    y_test = pickle.loads(r.get("classification_df:y_test"))
     models_train = MLFlowTrainModel(X_train, y_train, X_test, y_test)
 
-    r.delete("regression_df:train")
-    r.delete("regression_df:X_train")
-    r.delete("regression_df:X_test")
-    r.delete("regression_df:y_train")
-    r.delete("regression_df:y_test")
+    r.delete("classification_df:train")
+    r.delete("classification_df:X_train")
+    r.delete("classification_df:X_test")
+    r.delete("classification_df:y_train")
+    r.delete("classification_df:y_test")
 
-    with mlflow.start_run(run_name = 'Regression Test Dataset') as parent_run:
+    with mlflow.start_run(run_name = 'Classification Test Dataset') as parent_run:
 
         dataset = mlflow.data.from_pandas(
-                train,
-                source="snu",
-                name="telemetry_aggregate_temp_c",
-                targets="target",
-            )
+                    train,
+                    source="snu",
+                    name="telemetry_anomaly",
+                    targets="target",
+                )
         mlflow.log_input(dataset, context="training")
 
-        for model_name, model in models.regression_models().items():
+        for model_name, model in models.classification_models().items():
             with mlflow.start_run(run_name = model_name, nested=True) as child_run:
-                models_train(model, model_name, 'regression')
+                models_train(model, model_name, 'classification')
 
 with DAG(
-    dag_id="snu_demo_regression",
+    dag_id="snu_demo_classification",
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
