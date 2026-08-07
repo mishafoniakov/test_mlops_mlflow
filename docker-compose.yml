@@ -6,8 +6,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__WEBSERVER__PID: /tmp/airflow-webserver.pid
     MLFLOW_TRACKING_URI: http://mlflow:5000
-    REDIS_URL: redis://redis:6379/0
     AIRFLOW_CONN_CLICKHOUSE_DEFAULT: clickhouse://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}/${CLICKHOUSE_DB}
+    AIRFLOW_CONN_REDIS_DEFAULT: redis://redis:6379/0
     PYTHONPATH: /opt/airflow
     GIT_PYTHON_REFRESH: quiet
   volumes:
@@ -61,16 +61,15 @@ services:
       - "${MLFLOW_HOST_PORT}:5000"
     volumes:
       - mlflow_artifacts:/mlflow/artifacts
+      - mlflow_db:/mlflow/db
     entrypoint:
       - /bin/bash
       - -c
       - |
-        pip install --no-cache-dir psycopg2-binary
-        python -c "import psycopg2; c=psycopg2.connect(host='postgres',user='${POSTGRES_USER}',password='${POSTGRES_PASSWORD}',dbname='${POSTGRES_DB}'); c.autocommit=True; cur=c.cursor(); cur.execute(\"SELECT 1 FROM pg_database WHERE datname='mlflow'\"); cur.execute('CREATE DATABASE mlflow') if not cur.fetchone() else None"
-        mkdir -p /mlflow/artifacts
-        chmod -R 777 /mlflow/artifacts
+        mkdir -p /mlflow/artifacts /mlflow/db
+        chmod -R 777 /mlflow/artifacts /mlflow/db
         exec mlflow server \
-          --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/mlflow \
+          --backend-store-uri sqlite:////mlflow/db/mlflow.db \
           --default-artifact-root mlflow-artifacts:/ \
           --artifacts-destination /mlflow/artifacts \
           --serve-artifacts \
@@ -92,6 +91,12 @@ services:
         --lastname User \
         --role Admin \
         --email ${AIRFLOW_ADMIN_EMAIL} || true
+        airflow variables set MLFLOW_EXPERIMENT_NAME mlflow_test_snu
+        airflow variables set REGRESSION_QUERY "select ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, ts_second, aggregate_temp_c_lag, is_anomaly, aggregate_temp_diff, target from snu.telemetry_aggregate_temp_c_3600 where well_id = 'SNU-001' and ts <= toDateTime64('2026-08-06 23:59:59', 3, 'UTC')"
+        airflow variables set CLASSIFICATION_QUERY "select ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, ts_second, aggregate_temp_c_lag, is_anomaly, aggregate_temp_diff, target from snu.telemetry_anomaly_3600 where well_id = 'SNU-001' and ts <= toDateTime64('2026-08-06 23:59:59', 3, 'UTC')"
+        airflow variables set PREDICT "select ts, ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, ts_second, aggregate_temp_c_lag, is_anomaly, aggregate_temp_diff from snu.telemetry_aggregate_temp_c_3600 where well_id = 'SNU-001' and ts > toDateTime64('2026-08-06 23:59:59', 3, 'UTC')"
+        airflow variables set MODEL_URI 0000000
+        airflow variables set TRAIN_SPLIT 0.8
     restart: "no"
 
   airflow-webserver:
@@ -132,6 +137,7 @@ services:
 volumes:
   postgres_data:
   mlflow_artifacts:
+  mlflow_db:
 
 networks:
   clickhouse_net:

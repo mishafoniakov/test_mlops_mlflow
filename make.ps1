@@ -24,6 +24,7 @@ function Show-Help {
     Write-Host ""
     Write-Host "  Docker / stack"
     Write-Host "    .\make restart            Stop, rebuild and start all services"
+    Write-Host "    .\make restart_prune      Stop, prune images, rebuild and start"
     Write-Host "    .\make down               Stop and remove containers"
     Write-Host "    .\make ps                 Container status"
     Write-Host "    .\make logs               Follow all logs"
@@ -92,6 +93,14 @@ switch ($Command.ToLower()) {
     "help" { Show-Help }
     "restart" {
         Invoke-Expression "$Compose down"
+        Invoke-Expression "$Compose up -d --build"
+    }
+    "restart_prune" {
+        Invoke-Expression "$Compose down"
+        docker system prune -af
+        if ($LASTEXITCODE -ne 0) {
+            throw "docker system prune failed (exit $LASTEXITCODE)"
+        }
         Invoke-Expression "$Compose up -d --build"
     }
     "down" { Invoke-Expression "$Compose down" }

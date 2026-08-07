@@ -6,18 +6,16 @@ import mlflow
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.models import Variable
 
 from scripts.engines import MLFlowEngines
 from scripts.settings import MLFlowModelsDict
 from scripts.train import MLFlowTrainModel
-from scripts.queries import MLFLowQueries
 
 eng = MLFlowEngines()
 
 def get_data():
-    q = MLFLowQueries()
-
-    df = eng.get_pandas_df(q.regression_query).dropna()
+    df = eng.get_pandas_df(Variable.get('TRAINING_QUERY')).dropna()
 
     r = eng.get_redis
     r.setex("regression_df:data", 600, pickle.dumps(df))
@@ -35,8 +33,9 @@ def preprocess_data():
                       'ts_second'])
     r.delete("regression_df:data")
 
-    split_idx = int(len(data) * 0.8)
+    split_idx = int(len(data) * float(Variable.get('TRAIN_SPLIT')))
     train = data.iloc[:split_idx]
+
     test = data.iloc[split_idx:]
 
     X_train = train.drop('target', axis=1)
@@ -54,7 +53,7 @@ def train_data():
     from mlflow.tracking import MlflowClient
 
     models = MLFlowModelsDict()
-    name = 'mlflow_test_snu'
+    name = Variable.get('MLFLOW_EXPERIMENT_NAME')
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
 
     client = MlflowClient()

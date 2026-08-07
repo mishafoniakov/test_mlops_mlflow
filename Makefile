@@ -1,4 +1,4 @@
-.PHONY: help restart push
+.PHONY: help restart restart_prune push
 
 help:
 	@echo ""
@@ -15,7 +15,7 @@ restart:
 
 restart_prune:
 	docker compose down
-	docker system prune -a
+	docker system prune -af
 	docker compose up -d --build
 
 MSG ?= update

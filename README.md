@@ -2,7 +2,7 @@
 
 Docker-стек для оркестрации ML-пайплайнов: **Apache Airflow** управляет обучением, **MLflow** хранит эксперименты и артефакты, **PostgreSQL** — метаданные, **Redis** — буфер между задачами.
 
-Демонстрационный DAG `snu_demo` читает VIEW `snu.telemetry_aggregate_temp_c` из внешнего ClickHouse через `ClickHouseHook`, обучает регрессионные модели и логирует метрики/параметры/модель в MLflow.
+Демонстрационные DAG-и читают VIEW `snu.telemetry_aggregate_temp_c` (регрессия) и `snu.telemetry_anomaly` (классификация), обучают модели и логируют результаты в MLflow.
 
 ## Архитектура
 
@@ -43,13 +43,13 @@ ClickHouse — **внешний** контейнер в сети `clickhouse_def
 ```
 my-mlflow/
 ├── dags/
-│   └── dag_1.py              # DAG snu_demo
+│   ├── dag_1.py              # snu_demo_regression
+│   └── dag_2.py              # snu_demo_classification
 ├── scripts/
 │   ├── engines.py            # Redis / ClickHouse helpers
 │   ├── settings.py           # модели sklearn
+│   ├── queries.py            # SQL к ClickHouse
 │   └── train.py              # обучение + MLflow logging
-├── queries/
-│   └── queries.py            # SQL к ClickHouse
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env.example
@@ -81,7 +81,7 @@ cp .env.example .env
 - **Airflow** — http://localhost:8080 (логин/пароль из `.env`)
 - **MLflow** — http://localhost:5001
 
-Включите DAG `snu_demo` в Airflow и запустите вручную (schedule отключён).
+Включите DAG `snu_demo_regression` / `snu_demo_classification` в Airflow и запустите вручную (schedule отключён).
 
 ### Остановка
 

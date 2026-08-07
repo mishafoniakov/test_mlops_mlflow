@@ -1,13 +1,13 @@
-import os
-
 import redis
+from airflow.hooks.base import BaseHook
 from airflow_clickhouse_plugin.hooks.clickhouse import ClickHouseHook
 
 class MLFlowEngines:
 
     @property
     def get_redis(self):
-        return redis.from_url(os.environ["REDIS_URL"])
+        conn = BaseHook.get_connection("redis_default")
+        return redis.from_url(conn.get_uri())
 
     @property
     def get_clickhouse(self):
