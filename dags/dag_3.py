@@ -1,26 +1,31 @@
 import os
 import pickle
+from datetime import datetime
 
 import mlflow
 import mlflow.sklearn
-from datetime import datetime
+import numpy as np
+import pandas as pd
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.models import Variable
+from airflow_clickhouse_plugin.operators.clickhouse import ClickHouseOperator
 from scripts.engines import MLFlowEngines
 
 eng = MLFlowEngines()
 
-def get_data():
-    df = eng.get_pandas_df(Variable.get("PREDICT"))
 
-    z = df[['ts']]
-    data = df.drop('ts', axis=1)
+def get_data():
+    df = eng.get_pandas_df(Variable.get("PREDICTION_QUERY"))
+
+    z = df[["ts"]]
+    data = df.drop("ts", axis=1)
 
     r = eng.get_redis
     r.setex("prediction_df:ts", 600, pickle.dumps(z))
     r.setex("prediction_df:data", 600, pickle.dumps(data))
+
 
 def predict():
     r = eng.get_redis
@@ -32,25 +37,44 @@ def predict():
 
     r.setex("prediction_df:y_pred", 600, pickle.dumps(y_pred))
 
+
 def output_result():
     r = eng.get_redis
     ts = pickle.loads(r.get("prediction_df:ts"))
     prediction = pickle.loads(r.get("prediction_df:y_pred"))
 
-    result = ts.copy()
-    result["y_pred"] = prediction
+    table = Variable.get("PREDICTION_TABLE")
+    pred_type = Variable.get("PREDICTION_TYPE")
+
+    ts_col = pd.to_datetime(ts["ts"]).reset_index(drop=True)
+    if getattr(ts_col.dt, "tz", None) is not None:
+        ts_col = ts_col.dt.tz_convert(None)
+
+    update_time = pd.Timestamp.now(tz="UTC").tz_convert(None)
+
+    result = pd.DataFrame(
+        {
+            "ts": ts_col,
+            "target": np.asarray(prediction, dtype="float32"),
+            "update_time": update_time,
+        }
+    )
+
+    eng.insert_pandas_df(table, result)
 
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
     mlflow.set_experiment(Variable.get("MLFLOW_EXPERIMENT_NAME"))
 
     with mlflow.start_run(run_name="predict_output"):
+        mlflow.log_param("prediction_type", pred_type)
+        mlflow.log_param("prediction_table", table)
+        mlflow.log_metric("n_predictions", float(len(result)))
         mlflow.log_table(result.head(100), "predictions.json")
-
-    r.setex("prediction_df:result", 1200, pickle.dumps(result))
 
     r.delete("prediction_df:ts")
     r.delete("prediction_df:data")
     r.delete("prediction_df:y_pred")
+
 
 with DAG(
     dag_id="snu_demo_predict",
@@ -61,15 +85,24 @@ with DAG(
 ) as dag:
 
     preprocessing = PythonOperator(
-        task_id="data", 
-        python_callable=get_data)
+        task_id="data",
+        python_callable=get_data,
+    )
 
     prediction = PythonOperator(
-        task_id="predict", 
-        python_callable=predict)
+        task_id="predict",
+        python_callable=predict,
+    )
+
+    truncate = ClickHouseOperator(
+        task_id="truncate",
+        sql="TRUNCATE TABLE IF EXISTS {{ var.value.PREDICTION_TABLE }}",
+        clickhouse_conn_id="clickhouse_default",
+    )
 
     output = PythonOperator(
-            task_id="output", 
-            python_callable=output_result)
+        task_id="output",
+        python_callable=output_result,
+    )
 
-    preprocessing >> prediction >> output
+    preprocessing >> prediction >> truncate >> output

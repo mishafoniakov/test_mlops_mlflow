@@ -27,7 +27,7 @@ class MLFlowModelsDict:
 
     def classification_models(self):
         return {
-            "LogisticRegression": LogisticRegression(),
+            "LogisticRegression": LogisticRegression(max_iter=1000),
             "DecisionTreeClassifier": DecisionTreeClassifier(
                 max_depth=8,
                 random_state=42,

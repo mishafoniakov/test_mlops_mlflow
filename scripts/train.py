@@ -2,7 +2,17 @@ import numpy as np
 import mlflow
 import mlflow.sklearn
 from mlflow.models import infer_signature
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix,
+)
 
 
 class MLFlowTrainModel:
@@ -31,20 +41,43 @@ class MLFlowTrainModel:
             mlflow.log_metric("r2", float(r2_score(y_true, y_pred)))
 
         elif model_type == 'classification':
-
-            y_proba = model.predict_proba(self.X_test)[:, 1]
+            classes = np.unique(y_true)
+            n_classes = len(classes)
+            mlflow.log_param("n_classes", int(n_classes))
 
             mlflow.log_metric("accuracy", float(accuracy_score(y_true, y_pred)))
-            mlflow.log_metric("precision", float(precision_score(y_true, y_pred, zero_division=0)))
-            mlflow.log_metric("recall", float(recall_score(y_true, y_pred)))
-            mlflow.log_metric("f1", float(f1_score(y_true, y_pred)))
-            mlflow.log_metric("roc_auc_score", float(roc_auc_score(y_true, y_proba)))
 
-            tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-            mlflow.log_metric("tn", float(tn))
-            mlflow.log_metric("fp", float(fp))
-            mlflow.log_metric("fn", float(fn))
-            mlflow.log_metric("tp", float(tp))
+            if n_classes <= 2:
+                average = "binary"
+                y_score = model.predict_proba(self.X_test)[:, 1]
+                mlflow.log_metric(
+                    "roc_auc_score",
+                    float(roc_auc_score(y_true, y_score)),
+                )
+            else:
+                average = "weighted"
+                y_score = model.predict_proba(self.X_test)
+                mlflow.log_metric(
+                    "roc_auc_score",
+                    float(roc_auc_score(y_true, y_score, multi_class="ovr", average="weighted")),
+                )
+                cm = confusion_matrix(y_true, y_pred, labels=classes)
+                for i, label in enumerate(classes):
+                    mlflow.log_metric(f"cm_true_{int(label)}", float(cm[i].sum()))
+                    mlflow.log_metric(f"cm_pred_{int(label)}", float(cm[:, i].sum()))
+
+            mlflow.log_metric(
+                "precision",
+                float(precision_score(y_true, y_pred, average=average, zero_division=0)),
+            )
+            mlflow.log_metric(
+                "recall",
+                float(recall_score(y_true, y_pred, average=average, zero_division=0)),
+            )
+            mlflow.log_metric(
+                "f1",
+                float(f1_score(y_true, y_pred, average=average, zero_division=0)),
+            )
 
         mlflow.log_param("model_type", model_type)
 

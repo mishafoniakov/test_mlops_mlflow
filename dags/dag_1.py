@@ -15,7 +15,7 @@ from scripts.train import MLFlowTrainModel
 eng = MLFlowEngines()
 
 def get_data():
-    df = eng.get_pandas_df(Variable.get('TRAINING_QUERY')).dropna()
+    df = eng.get_pandas_df(Variable.get('REGRESSION_QUERY')).dropna()
 
     r = eng.get_redis
     r.setex("regression_df:data", 600, pickle.dumps(df))
