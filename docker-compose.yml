@@ -85,20 +85,13 @@ services:
       - |
         airflow db migrate
         airflow users create \
-        --username ${AIRFLOW_ADMIN_USERNAME} \
-        --password ${AIRFLOW_ADMIN_PASSWORD} \
-        --firstname Admin \
-        --lastname User \
-        --role Admin \
-        --email ${AIRFLOW_ADMIN_EMAIL} || true
-        airflow variables set MLFLOW_EXPERIMENT_NAME mlflow_test_snu
-        airflow variables set PREDICTION_TYPE regression
-        airflow variables set REGRESSION_QUERY "select ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, ts_second, aggregate_temp_c_lag, is_anomaly_1, is_anomaly_2, aggregate_temp_diff, target from snu.telemetry_aggregate_temp_c_3600"
-        airflow variables set CLASSIFICATION_QUERY "select ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, ts_second, aggregate_temp_c_lag, is_anomaly, aggregate_temp_diff, target from snu.telemetry_anomaly_3600"
-        airflow variables set PREDICTION_QUERY "select ts, ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, ts_second, aggregate_temp_c_lag, is_anomaly_1, is_anomaly_2, aggregate_temp_diff from snu.telemetry_aggregate_temp_c_3600_pred"
-        airflow variables set PREDICTION_TABLE snu.telemetry_aggregate_temp_c_3600_prediction
-        airflow variables set MODEL_URI 0000000
-        airflow variables set TRAIN_SPLIT 0.8
+          --username ${AIRFLOW_ADMIN_USERNAME} \
+          --password ${AIRFLOW_ADMIN_PASSWORD} \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email ${AIRFLOW_ADMIN_EMAIL} || true
+        python /opt/airflow/scripts/init_airflow_variables.py
     restart: "no"
 
   airflow-webserver:

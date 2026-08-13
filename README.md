@@ -57,7 +57,7 @@ my-mlflow/
 │   └── dag_3.py              # snu_demo_predict
 ├── scripts/
 │   ├── engines.py            # Redis / ClickHouse helpers
-│   ├── settings.py           # модели sklearn
+│   ├── settings.py           # реестр sklearn + сборка из Variables
 │   └── train.py              # обучение + MLflow logging
 ├── queries/                  # опциональные SQL-файлы (mount в контейнер)
 ├── docker-compose.yml
@@ -161,6 +161,8 @@ Connection id ClickHouse: `clickhouse_default` (через `AIRFLOW_CONN_CLICKHO
 | `PREDICTION_TABLE` | Куда писать результат (например `snu.telemetry_aggregate_temp_c_3600_prediction`) |
 | `PREDICTION_TYPE` | Метка для логов (`regression` / `classification`) |
 | `MODEL_URI` | URI модели MLflow, например `runs:/<run_id>/DecisionTreeRegressor` |
+| `REGRESSION_MODELS` | JSON: имя модели → kwargs sklearn для `snu_demo_regression` |
+| `CLASSIFICATION_MODELS` | JSON: имя модели → kwargs sklearn для `snu_demo_classification` |
 
 После обучения возьмите URI из MLflow UI и обновите `MODEL_URI`. Если в pred-запросе есть колонки, которых не было при fit, задача `predict` упадёт с `feature names should match`.
 
@@ -186,9 +188,20 @@ PREDICTION_QUERY:
 
 1. **data** — `ClickHouseHook` выполняет Variable-запрос → DataFrame в Redis  
 2. **preprocessing** — сортировка по календарным полям, train/test split, `X`/`y` → Redis  
-3. **training** — модели из `scripts/settings.py`, nested runs в MLflow (`params` / `metrics` / model)
+3. **training** — модели из Variables `REGRESSION_MODELS` / `CLASSIFICATION_MODELS` (реестр классов в `scripts/settings.py`), nested runs в MLflow
 
-Модели (sklearn): Linear/Logistic, DecisionTree, RandomForest, GradientBoosting.
+Пример `REGRESSION_MODELS`:
+
+```json
+{
+  "LinearRegression": {},
+  "DecisionTreeRegressor": {"max_depth": 8, "random_state": 42},
+  "RandomForestRegressor": {"n_estimators": 30, "max_depth": 8, "n_jobs": 2, "random_state": 42},
+  "GradientBoostingRegressor": {"n_estimators": 30, "max_depth": 3, "random_state": 42}
+}
+```
+
+Чтобы отключить модель — уберите ключ из JSON. Новый тип модели сначала добавляется в реестр в `settings.py`.
 
 ### `snu_demo_predict`
 
