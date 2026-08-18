@@ -91,7 +91,7 @@ services:
           --lastname User \
           --role Admin \
           --email ${AIRFLOW_ADMIN_EMAIL} || true
-        python /opt/airflow/scripts/init_airflow_variables.py
+        python /opt/airflow/scripts/variables.py
     restart: "no"
 
   airflow-webserver:

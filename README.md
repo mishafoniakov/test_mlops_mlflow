@@ -4,11 +4,10 @@ Docker-стек для оркестрации ML-пайплайнов: **Apache 
 
 Демо-DAG-и:
 
-| DAG | Назначение |
-|---|---|
-| `snu_demo_regression` | Обучение регрессии температуры (`aggregate_temp_c`) |
-| `snu_demo_classification` | Обучение классификации аномалий |
-| `snu_demo_predict` | Инференс → запись в таблицу предсказаний ClickHouse |
+| DAG | Файл | Назначение |
+|---|---|---|
+| `snu_demo_training` | `dags/dag_1.py` | Обучение (regression / classification по `PREDICTION_TYPE`) |
+| `snu_demo_predict` | `dags/dag_2.py` | Инференс → запись в таблицу предсказаний ClickHouse |
 
 ## Архитектура
 
@@ -16,7 +15,7 @@ Docker-стек для оркестрации ML-пайплайнов: **Apache 
 flowchart LR
     CH[(ClickHouse)]
     subgraph Airflow
-        Train[snu_demo_regression / classification]
+        Train[snu_demo_training]
         Pred[snu_demo_predict]
     end
 
@@ -28,11 +27,11 @@ flowchart LR
 
     MLflow[MLflow Server]
 
-    CH -->|train / pred features| Train
-    CH -->|pred features| Pred
-    Train -->|preprocess| Redis
-    Train -->|train| MLflow
-    Pred -->|load model| MLflow
+    CH -->|TRAINING_QUERY / PREDICTION_QUERY| Train
+    CH -->|PREDICTION_QUERY| Pred
+    Train -->|DataFrame + scaler meta| Redis
+    Train -->|models + scaler| MLflow
+    Pred -->|MODEL_URI + SCALER_URI| MLflow
     Pred -->|predictions| CH
     MLflow --> Artifacts
     Airflow --> PG
@@ -45,21 +44,22 @@ flowchart LR
 | PostgreSQL | Метаданные Airflow | localhost:5435 |
 | Redis | Передача DataFrame между задачами | localhost:6379 |
 
-ClickHouse — **внешний** контейнер в сети `clickhouse_default` (не поднимается этим compose). Обычно рядом лежит отдельный проект `Clickhouse/` с `docker-compose.yml` (`mem_limit: 10g` и т.п.).
+ClickHouse — **внешний** контейнер в сети `clickhouse_default` (не поднимается этим compose). Обычно рядом лежит проект `Clickhouse/` (`mem_limit` ~5g и т.п.).
 
 ## Структура проекта
 
 ```
 my-mlflow/
 ├── dags/
-│   ├── dag_1.py              # snu_demo_regression
-│   ├── dag_2.py              # snu_demo_classification
-│   └── dag_3.py              # snu_demo_predict
+│   ├── dag_1.py              # snu_demo_training
+│   └── dag_2.py              # snu_demo_predict
 ├── scripts/
 │   ├── engines.py            # Redis / ClickHouse helpers
 │   ├── settings.py           # реестр sklearn + сборка из Variables
-│   └── train.py              # обучение + MLflow logging
-├── queries/                  # опциональные SQL-файлы (mount в контейнер)
+│   ├── train.py              # обучение + MLflow metrics
+│   ├── scaling.py            # Standard / MinMax / Robust / none
+│   └── variables.py          # init Airflow Variables (airflow-init)
+├── queries/                  # опциональные SQL (mount в контейнер)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env.example
@@ -68,44 +68,46 @@ my-mlflow/
 └── README.md
 ```
 
-SQL материализованных VIEW и таблиц внешних факторов живёт во внешнем репозитории/папке ClickHouse, например:
+SQL таблиц и материализованных VIEW — во внешнем `Clickhouse/`, например:
 
 ```
 Clickhouse/
 ├── docker-compose.yml
 ├── config.d/memory.xml
 ├── tables/
+│   ├── snu_telemetry.sql
+│   ├── snu_telemetry_comments.sql
 │   ├── external_weather.sql
 │   └── external_power.sql
 └── views/
-    ├── telemetry_aggregate_temp_c_3600.sql
-    ├── telemetry_aggregate_temp_c_3600_pred.sql
-    ├── telemetry_anomaly_3600.sql
-    └── telemetry_anomaly_3600_pred.sql
+    └── telemetry_2.sql       # train/pred MV с Label Encoding (UInt8)
 ```
+
+Регенерация синтетики: `scripts/regen_snu_telemetry.sql` (в этом репо) при необходимости.
 
 ## Данные ClickHouse (схема `snu`)
 
-Исходная телеметрия: `snu.snu_telemetry` (в т.ч. `well_id`, секундные ряды).
+Исходная телеметрия: `snu.snu_telemetry` — секундные ряды, скважины `SNU-001`…`SNU-005`, категориальные поля как **Enum8** (норма / `none` = 0), таргеты следующего шага: `target_oil_mixture_next_m3`, `target_aggregate_temp_next_c`, `target_scenario_next`, `target_anomaly_type_next`.
+
+Актуальные MV из `telemetry_2.sql` (Label Encoding через `toUInt8`, `well_id = SNU-001`):
 
 | Объект | Роль |
 |---|---|
-| `snu.telemetry_aggregate_temp_c_3600` | Train MV регрессии (SNU-001, `ts <= 2026-08-06`) |
-| `snu.telemetry_aggregate_temp_c_3600_pred` | Features для инференса (`ts > 2026-08-06`, без `target`) |
-| `snu.telemetry_anomaly_3600` | Train MV классификации |
-| `snu.telemetry_anomaly_3600_pred` | Pred MV классификации |
-| `snu.telemetry_aggregate_temp_c_3600_prediction` | Результат predict (регрессия) |
-| `snu.telemetry_aggregate_anomaly_3600_prediction` | Результат predict (классификация) |
-| `snu.external_weather` / `snu.external_power` | Внешние факторы (погода / электросеть) |
+| `snu.telemetry_aggregate_temp_c` | Train MV регрессии (`ts <= 2026-08-06`), колонка **`target`** = след. температура |
+| `snu.telemetry_aggregate_temp_c_pred` | Pred features (`ts > 2026-08-06`, есть `ts`, без `target`) |
+| `snu.telemetry_scenario` | Train MV сценария (`target_scenario_next` как UInt8-таргет при необходимости) |
+| `snu.telemetry_scenario_pred` | Pred features для сценария |
+| `snu.telemetry_aggregate_temp_c_3600_prediction` | Таблица результата predict (имя по Variable) |
+| `snu.external_weather` / `snu.external_power` | Внешние факторы |
 
-Типичные фичи train/pred (регрессия): календарные поля из `ts`, `aggregate_temp_c_lag`, `is_anomaly_1` / `is_anomaly_2`, `aggregate_temp_diff`; опционально лаги объёма/тока и погода — через Airflow Variables (см. ниже). Набор колонок в `REGRESSION_QUERY` и `PREDICTION_QUERY` **должен совпадать** (кроме `target` / `ts`).
+Набор колонок в `TRAINING_QUERY` (с `target`) и `PREDICTION_QUERY` (с `ts`, без `target`) должен совпадать по фичам. После обучения Variable `FEATURE_COLS` фиксирует порядок колонок для predict.
 
 ## Быстрый старт
 
 ### Требования
 
 - Docker и Docker Compose v2
-- Внешний ClickHouse в сети `clickhouse_default`, схема `snu`, VIEW `*_3600` / `*_pred`
+- Внешний ClickHouse в сети `clickhouse_default`, схема `snu`, MV из `telemetry_2.sql`
 - На Windows: `.\make restart` (обёртки `make.ps1` / `make.cmd`)
 
 ### Запуск
@@ -123,7 +125,14 @@ cp .env.example .env
 - **Airflow** — http://localhost:8080 (логин/пароль из `.env`)
 - **MLflow** — http://localhost:5001
 
-Включите нужные DAG в UI и запускайте вручную (`schedule=None`).
+Variables инициализируются скриптом `scripts/variables.py` (вызывается из `airflow-init`).  
+Включите DAG в UI и запускайте вручную (`schedule=None`).
+
+Повторно применить Variables:
+
+```bash
+docker exec my-mlflow-airflow-webserver-1 python /opt/airflow/scripts/variables.py
+```
 
 ### Остановка
 
@@ -131,7 +140,7 @@ cp .env.example .env
 docker compose down
 ```
 
-Если после перезапуска WSL/Docker UI MLflow не открывается с хоста (`Empty reply`), а внутри контейнера сервис жив — перезапустите сервис: `docker compose restart mlflow`.
+Если после перезапуска WSL/Docker UI MLflow не открывается с хоста (`Empty reply`), а внутри контейнера сервис жив — `docker compose restart mlflow`.
 
 ## Переменные окружения
 
@@ -149,46 +158,42 @@ Connection id ClickHouse: `clickhouse_default` (через `AIRFLOW_CONN_CLICKHO
 
 ## Airflow Variables
 
-Задаются при `airflow-init` (значения по умолчанию в `docker-compose.yml`) и правятся в UI / CLI.
+Источник дефолтов: `scripts/variables.py`.
 
 | Variable | Назначение |
 |---|---|
-| `MLFLOW_EXPERIMENT_NAME` | Эксперимент MLflow (по умолчанию `mlflow_test_snu`) |
-| `TRAIN_SPLIT` | Доля train (по умолчанию `0.8`), split по времени после сортировки |
-| `REGRESSION_QUERY` | SQL фич + `target` для `snu_demo_regression` |
-| `CLASSIFICATION_QUERY` | SQL фич + `target` для `snu_demo_classification` |
-| `PREDICTION_QUERY` | SQL фич (+ `ts`) для `snu_demo_predict`, **без** `target` |
-| `PREDICTION_TABLE` | Куда писать результат (например `snu.telemetry_aggregate_temp_c_3600_prediction`) |
-| `PREDICTION_TYPE` | Метка для логов (`regression` / `classification`) |
-| `MODEL_URI` | URI модели MLflow, например `runs:/<run_id>/DecisionTreeRegressor` |
-| `REGRESSION_MODELS` | JSON: имя модели → kwargs sklearn для `snu_demo_regression` |
-| `CLASSIFICATION_MODELS` | JSON: имя модели → kwargs sklearn для `snu_demo_classification` |
+| `MLFLOW_EXPERIMENT_NAME` | Эксперимент MLflow (`mlflow_test_snu`) |
+| `DATASET_NAME` | Имя датасета в MLflow input |
+| `PREDICTION_TYPE` | `regression` или `classification` — выбор реестра моделей |
+| `TRAIN_SPLIT` | Доля train (`0.8`), split по времени после сортировки |
+| `TRAINING_QUERY` | SQL фич + **`target`** для `snu_demo_training` |
+| `PREDICTION_QUERY` | SQL фич + **`ts`**, без `target` |
+| `PREDICTION_TABLE` | Куда писать результат |
+| `MODEL_URI` | URI модели, например `runs:/<run_id>/DecisionTreeRegressor` |
+| `SCALER_TYPE` | `none` / `standard` / `minmax` / `robust` |
+| `SCALER_EXCLUDE_COLS` | CSV колонок без scale (по умолчанию `scenario,anomaly_flag,anomaly_type`) |
+| `SCALER_URI` | URI scaler в MLflow (ставится автоматически после training) |
+| `SCALER_SCALED_COLS` | Колонки, к которым применён scaler (авто) |
+| `FEATURE_COLS` | Порядок фич после training (авто, для predict) |
+| `REGRESSION_MODELS` | JSON: имя → kwargs sklearn |
+| `CLASSIFICATION_MODELS` | JSON: имя → kwargs sklearn |
 
-После обучения возьмите URI из MLflow UI и обновите `MODEL_URI`. Если в pred-запросе есть колонки, которых не было при fit, задача `predict` упадёт с `feature names should match`.
+**Важно про объём:** `SELECT *` по полной MV (~миллионы строк) может оборвать Redis (`Connection reset`). Для демо добавляйте sampling / фильтр по дню в `TRAINING_QUERY`, например `WHERE ts_day_year = 218` или `cityHash64(...) % 50 = 0`.
 
-Дефолты при init (можно расширять под MV с лагами/погодой):
+После обучения:
 
-```text
-REGRESSION_QUERY:
-  … is_anomaly_1, is_anomaly_2, aggregate_temp_diff, target
-  FROM snu.telemetry_aggregate_temp_c_3600
-
-CLASSIFICATION_QUERY:
-  … is_anomaly, aggregate_temp_diff, target
-  FROM snu.telemetry_anomaly_3600
-
-PREDICTION_QUERY:
-  ts, … is_anomaly_1, is_anomaly_2, aggregate_temp_diff
-  FROM snu.telemetry_aggregate_temp_c_3600_pred
-```
+1. В MLflow возьмите URI лучшей модели → `MODEL_URI`
+2. `SCALER_URI` / `FEATURE_COLS` уже выставлены training-DAG (если был scaler)
 
 ## Демо-пайплайны
 
-### `snu_demo_regression` / `snu_demo_classification`
+### `snu_demo_training`
 
-1. **data** — `ClickHouseHook` выполняет Variable-запрос → DataFrame в Redis  
-2. **preprocessing** — сортировка по календарным полям, train/test split, `X`/`y` → Redis  
-3. **training** — модели из Variables `REGRESSION_MODELS` / `CLASSIFICATION_MODELS` (реестр классов в `scripts/settings.py`), nested runs в MLflow
+1. **data** — `TRAINING_QUERY` → Redis `training_df:data`  
+2. **preprocessing** — сортировка по календарным полям → **train/test split** → scaling (**fit только на train**) → Redis `train` / `test` / `scaler_meta`  
+3. **training** — модели из `REGRESSION_MODELS` или `CLASSIFICATION_MODELS`, nested runs; лог scaler в MLflow (`artifact_path=scaler`); обновление `SCALER_URI`, `SCALER_SCALED_COLS`, `FEATURE_COLS`
+
+Категориальные label-encoded колонки по умолчанию **не** масштабируются (`SCALER_EXCLUDE_COLS`).
 
 Пример `REGRESSION_MODELS`:
 
@@ -201,16 +206,16 @@ PREDICTION_QUERY:
 }
 ```
 
-Чтобы отключить модель — уберите ключ из JSON. Новый тип модели сначала добавляется в реестр в `settings.py`.
+Чтобы отключить модель — уберите ключ из JSON. Новый тип — сначала в реестр `scripts/settings.py`.
 
 ### `snu_demo_predict`
 
 1. **data** — `PREDICTION_QUERY` → Redis (`ts` отдельно от фич)  
-2. **predict** — `mlflow.sklearn.load_model(MODEL_URI)` → `y_pred`  
-3. **truncate** — `ClickHouseOperator`: `TRUNCATE TABLE IF EXISTS {{ PREDICTION_TABLE }}`  
+2. **predict** — выравнивание по `FEATURE_COLS` → `transform` через `SCALER_URI` (если не `none`) → `model.predict(MODEL_URI)`  
+3. **truncate** — `TRUNCATE TABLE IF EXISTS {{ PREDICTION_TABLE }}`  
 4. **output** — insert (`ts`, `target`=prediction, `update_time`) + лог в MLflow  
 
-Таблица результата: `ReplacingMergeTree(update_time)` с колонками `ts`, `target` (Float32), `update_time`.
+Таблица результата: обычно `ReplacingMergeTree(update_time)` с колонками `ts`, `target` (Float32), `update_time`.
 
 ## Makefile
 

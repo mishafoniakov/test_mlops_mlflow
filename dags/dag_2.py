@@ -3,113 +3,133 @@ import pickle
 from datetime import datetime
 
 import mlflow
+import mlflow.sklearn
+import numpy as np
+import pandas as pd
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.models import Variable
-
+from airflow_clickhouse_plugin.operators.clickhouse import ClickHouseOperator
 from scripts.engines import MLFlowEngines
-from scripts.settings import MLFlowModelsDict
-from scripts.train import MLFlowTrainModel
+from scripts.scaling import apply_fitted_scaler, parse_col_list
 
 eng = MLFlowEngines()
 
+
 def get_data():
-    df = eng.get_pandas_df(Variable.get('CLASSIFICATION_QUERY')).dropna()
+    df = eng.get_pandas_df(Variable.get("PREDICTION_QUERY"))
+
+    z = df[["ts"]]
+    data = df.drop("ts", axis=1)
 
     r = eng.get_redis
-    r.setex("classification_df:data", 600, pickle.dumps(df))
+    r.setex("prediction_df:ts", 600, pickle.dumps(z))
+    r.setex("prediction_df:data", 600, pickle.dumps(data))
 
-def preprocess_data():
 
+def predict():
     r = eng.get_redis
-    data = pickle.loads(r.get("classification_df:data")) \
-        .sort_values(['ts_month', 
-                      'ts_day_year', 
-                      'ts_day_month', 
-                      'ts_day_week', 
-                      'ts_hour',
-                      'ts_minute',
-                      'ts_second'])
-    r.delete("classification_df:data")
+    data = pickle.loads(r.get("prediction_df:data"))
 
-    split_idx = int(len(data) * float(Variable.get('TRAIN_SPLIT')))
-    train = data.iloc[:split_idx]
-    test = data.iloc[split_idx:]
+    feature_cols = parse_col_list(Variable.get("FEATURE_COLS", default_var=""))
+    if feature_cols:
+        missing = [c for c in feature_cols if c not in data.columns]
+        if missing:
+            raise ValueError(
+                f"PREDICTION_QUERY missing training feature columns: {missing}"
+            )
+        data = data[feature_cols]
 
-    X_train = train.drop('target', axis=1)
-    y_train = train['target']
-    X_test = test.drop('target', axis=1)
-    y_test = test['target']
-
-    r.setex("classification_df:train", 600, pickle.dumps(train))
-    r.setex("classification_df:X_train", 600, pickle.dumps(X_train))
-    r.setex("classification_df:y_train", 600, pickle.dumps(y_train))
-    r.setex("classification_df:X_test", 600, pickle.dumps(X_test))
-    r.setex("classification_df:y_test", 600, pickle.dumps(y_test))
-
-def train_data():
-    from mlflow.tracking import MlflowClient
-
-    models = MLFlowModelsDict()
-    name = Variable.get('MLFLOW_EXPERIMENT_NAME')
     mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
 
-    client = MlflowClient()
-    exp = client.get_experiment_by_name(name)
-    if exp is not None and exp.lifecycle_stage == "deleted":
-        client.restore_experiment(exp.experiment_id)
-    mlflow.set_experiment(name)
+    scaler_uri = Variable.get("SCALER_URI", default_var="none")
+    scaler_type = Variable.get("SCALER_TYPE", default_var="none").strip().lower()
+    if scaler_uri not in ("", "none", "0000000") and scaler_type not in (
+        "none",
+        "off",
+        "",
+    ):
+        scaler = mlflow.sklearn.load_model(scaler_uri)
+        scaled_cols = parse_col_list(
+            Variable.get("SCALER_SCALED_COLS", default_var="")
+        )
+        data = apply_fitted_scaler(data, scaler, scaled_cols)
 
+    model = mlflow.sklearn.load_model(Variable.get("MODEL_URI"))
+    y_pred = model.predict(data)
+
+    r.setex("prediction_df:y_pred", 600, pickle.dumps(y_pred))
+
+
+def output_result():
     r = eng.get_redis
-    train = pickle.loads(r.get("classification_df:train"))
-    X_train = pickle.loads(r.get("classification_df:X_train"))
-    X_test = pickle.loads(r.get("classification_df:X_test"))
-    y_train = pickle.loads(r.get("classification_df:y_train"))
-    y_test = pickle.loads(r.get("classification_df:y_test"))
-    models_train = MLFlowTrainModel(X_train, y_train, X_test, y_test)
+    ts = pickle.loads(r.get("prediction_df:ts"))
+    prediction = pickle.loads(r.get("prediction_df:y_pred"))
 
-    r.delete("classification_df:train")
-    r.delete("classification_df:X_train")
-    r.delete("classification_df:X_test")
-    r.delete("classification_df:y_train")
-    r.delete("classification_df:y_test")
+    table = Variable.get("PREDICTION_TABLE")
+    pred_type = Variable.get("PREDICTION_TYPE")
 
-    with mlflow.start_run(run_name = 'Classification Test Dataset') as parent_run:
+    ts_col = pd.to_datetime(ts["ts"]).reset_index(drop=True)
+    if getattr(ts_col.dt, "tz", None) is not None:
+        ts_col = ts_col.dt.tz_convert(None)
 
-        dataset = mlflow.data.from_pandas(
-                    train,
-                    source="snu",
-                    name="telemetry_anomaly",
-                    targets="target",
-                )
-        mlflow.log_input(dataset, context="training")
+    update_time = pd.Timestamp.now(tz="UTC").tz_convert(None)
 
-        for model_name, model in models.classification_models().items():
-            with mlflow.start_run(run_name = model_name, nested=True) as child_run:
-                models_train(model, model_name, 'classification')
+    result = pd.DataFrame(
+        {
+            "ts": ts_col,
+            "target": np.asarray(prediction, dtype="float32"),
+            "update_time": update_time,
+        }
+    )
+
+    eng.insert_pandas_df(table, result)
+
+    mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_URI"])
+    mlflow.set_experiment(Variable.get("MLFLOW_EXPERIMENT_NAME"))
+
+    with mlflow.start_run(run_name="predict_output"):
+        mlflow.log_param("prediction_type", pred_type)
+        mlflow.log_param("prediction_table", table)
+        mlflow.log_param(
+            "scaler_uri", Variable.get("SCALER_URI", default_var="none")
+        )
+        mlflow.log_metric("n_predictions", float(len(result)))
+        mlflow.log_table(result.head(100), "predictions.json")
+
+    r.delete("prediction_df:ts")
+    r.delete("prediction_df:data")
+    r.delete("prediction_df:y_pred")
+
 
 with DAG(
-    dag_id="snu_demo_classification",
+    dag_id="snu_demo_predict",
     start_date=datetime(2026, 1, 1),
     schedule=None,
     catchup=False,
-    tags=["mlflow", "clickhouse", "demo"],
+    tags=["mlflow", "predict"],
 ) as dag:
 
-    data = PythonOperator(
-        task_id="data", 
-        python_callable=get_data
-    )
-
     preprocessing = PythonOperator(
-        task_id = "preprocessing",
-        python_callable=preprocess_data
+        task_id="data",
+        python_callable=get_data,
     )
 
-    training = PythonOperator(
-        task_id = "training",
-        python_callable=train_data
+    prediction = PythonOperator(
+        task_id="predict",
+        python_callable=predict,
     )
 
-    data >> preprocessing >> training
+    truncate = ClickHouseOperator(
+        task_id="truncate",
+        sql="TRUNCATE TABLE IF EXISTS {{ var.value.PREDICTION_TABLE }}",
+        clickhouse_conn_id="clickhouse_default",
+    )
+
+    output = PythonOperator(
+        task_id="output",
+        python_callable=output_result,
+    )
+
+    preprocessing >> prediction >> truncate >> output

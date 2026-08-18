@@ -1,31 +1,25 @@
 from airflow.models import Variable
 
+Variable.set("DATASET_NAME", 'regression')
 Variable.set("MLFLOW_EXPERIMENT_NAME", "mlflow_test_snu")
 Variable.set("PREDICTION_TYPE", "regression")
 Variable.set(
-    "REGRESSION_QUERY",
-    "select ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, "
-    "ts_second, aggregate_temp_c_lag, is_anomaly_1, is_anomaly_2, aggregate_temp_diff, "
-    "oil_mixture_volume_m3_lag, motor_current_a_lag, air_temp_c, humidity_pct, "
-    "atmospheric_pressure_hpa, target from snu.telemetry_aggregate_temp_c_3600",
-)
-Variable.set(
-    "CLASSIFICATION_QUERY",
-    "select ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, "
-    "ts_second, aggregate_temp_c_lag, is_anomaly, aggregate_temp_diff, "
-    "oil_mixture_volume_m3_lag, motor_current_a_lag, air_temp_c, humidity_pct, "
-    "atmospheric_pressure_hpa, target from snu.telemetry_anomaly_3600",
+    "TRAINING_QUERY",
+    "select * from snu.telemetry_aggregate_temp_c"
 )
 Variable.set(
     "PREDICTION_QUERY",
-    "select ts, ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, "
-    "ts_second, aggregate_temp_c_lag, is_anomaly_1, is_anomaly_2, aggregate_temp_diff, "
-    "oil_mixture_volume_m3_lag, motor_current_a_lag, air_temp_c, humidity_pct, "
-    "atmospheric_pressure_hpa from snu.telemetry_aggregate_temp_c_3600_pred",
+    "select ts, ts_month, ts_day_year, ts_day_month, ts_day_week, ts_hour, ts_minute, ts_second, atmospheric_pressure_hpa, aggregate_temp_c, oil_mixture_volume_m3, motor_current_a, motor_power_kw, dynamometer_load_kn, strokes_per_min, stroke_length_m, tubing_pressure_atm, casing_pressure_atm, fluid_level_m, pump_fillage_pct, water_cut_pct, vibration_rms, ambient_temp_c, scenario, anomaly_flag, anomaly_type from snu.telemetry_aggregate_temp_c_pred",
 )
 Variable.set("PREDICTION_TABLE", "snu.telemetry_aggregate_temp_c_3600_prediction")
 Variable.set("MODEL_URI", "0000000")
 Variable.set("TRAIN_SPLIT", "0.8")
+Variable.set("SCALER_TYPE", "standard")
+Variable.set("SCALER_EXCLUDE_COLS", "scenario,anomaly_flag,anomaly_type")
+# Filled automatically after snu_demo_training when a scaler is logged
+Variable.set("SCALER_URI", "none")
+Variable.set("SCALER_SCALED_COLS", "")
+Variable.set("FEATURE_COLS", "")
 Variable.set(
     "REGRESSION_MODELS",
     {
