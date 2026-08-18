@@ -64,7 +64,6 @@ my-mlflow/
 ├── Dockerfile
 ├── .env.example
 ├── Makefile / make.ps1 / make.cmd
-├── .gitlab-ci.yml
 └── README.md
 ```
 
@@ -225,18 +224,6 @@ Connection id ClickHouse: `clickhouse_default` (через `AIRFLOW_CONN_CLICKHO
 | `make restart_prune` | то же + `docker system prune -a` |
 | `make push MSG="текст"` | `git add` → `commit` → `push` |
 
-## CI/CD
-
-Pipeline в `.gitlab-ci.yml` — при merge request и push в `main`.
-
-| Stage | Job | Действие |
-|---|---|---|
-| validate | `validate:compose` | Проверка `docker-compose.yml` |
-| validate | `validate:dags` | Синтаксис DAG-файлов |
-| deploy | `deploy` | SSH-деплой (`git pull` + `compose up`), вручную |
-
-Переменные GitLab CI/CD: `SSH_PRIVATE_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`.
-
 ## Стек технологий
 
 - Apache Airflow 2.8.1
@@ -245,4 +232,3 @@ Pipeline в `.gitlab-ci.yml` — при merge request и push в `main`.
 - PostgreSQL 17
 - Redis 7
 - ClickHouse (внешний, `clickhouse-driver` / `airflow-clickhouse-plugin`)
-- GitLab CI/CD
