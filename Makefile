@@ -6,8 +6,6 @@ help:
 	@echo "  make restart_prune -- Stop, clean, rebuild and start all services"
 	@echo "  make push MSG=\"message\" -- git add + commit + push"
 	@echo ""
-	@echo "  Windows: .\\make restart"
-	@echo ""
 
 restart:
 	docker compose down

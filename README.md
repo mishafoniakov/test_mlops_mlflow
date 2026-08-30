@@ -65,7 +65,7 @@ my-mlflow/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env.example
-├── Makefile / make.ps1 / make.cmd
+├── Makefile
 └── README.md
 ```
 
@@ -113,7 +113,6 @@ Clickhouse/
 
 - Docker и Docker Compose v2
 - Внешний ClickHouse в сети `clickhouse_default` с уже существующими таблицами данных (для демо — схема `snu` и MV из `telemetry_2.sql`; telemetry здесь только пример)
-- На Windows: `.\make restart` (обёртки `make.ps1` / `make.cmd`)
 
 ### Запуск
 
@@ -121,7 +120,7 @@ Clickhouse/
 cp .env.example .env
 # отредактируйте секреты и порты в .env
 
-.\make restart
+make restart
 # или: docker compose up -d --build
 ```
 
@@ -226,7 +225,7 @@ Connection id ClickHouse: `clickhouse_default` (через `AIRFLOW_CONN_CLICKHO
 
 | Команда | Описание |
 |---|---|
-| `make restart` / `.\make restart` | `down` → `up -d --build` |
+| `make restart` | `down` → `up -d --build` |
 | `make restart_prune` | то же + `docker system prune -a` |
 | `make push MSG="текст"` | `git add` → `commit` → `push` |
 
