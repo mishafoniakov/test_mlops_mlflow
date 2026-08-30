@@ -116,13 +116,13 @@ Clickhouse/
 
 ### Запуск
 
-```bash
-cp .env.example .env
-# отредактируйте секреты и порты в .env
+Одна команда:
 
-make restart
-# или: docker compose up -d --build
+```bash
+make
 ```
+
+При первом запуске Makefile копирует `.env.example` → `.env` (если файла ещё нет), собирает образы и поднимает стек. Секреты и порты при необходимости правьте в `.env`, затем снова `make`.
 
 После старта:
 
@@ -141,10 +141,10 @@ docker exec my-mlflow-airflow-webserver-1 python /opt/airflow/scripts/variables.
 ### Остановка
 
 ```bash
-docker compose down
+make down
 ```
 
-Если после перезапуска WSL/Docker UI MLflow не открывается с хоста (`Empty reply`), а внутри контейнера сервис жив — `docker compose restart mlflow`.
+Если после перезапуска Docker UI MLflow не открывается с хоста (`Empty reply`), а внутри контейнера сервис жив — `make restart`.
 
 ## Переменные окружения
 
@@ -225,6 +225,8 @@ Connection id ClickHouse: `clickhouse_default` (через `AIRFLOW_CONN_CLICKHO
 
 | Команда | Описание |
 |---|---|
+| `make` / `make up` | создать `.env` при отсутствии → `up -d --build` |
+| `make down` | остановить и удалить контейнеры |
 | `make restart` | `down` → `up -d --build` |
 | `make restart_prune` | то же + `docker system prune -a` |
 | `make push MSG="текст"` | `git add` → `commit` → `push` |

@@ -1,17 +1,30 @@
-.PHONY: help restart restart_prune push
+.DEFAULT_GOAL := up
+
+.PHONY: help up down restart restart_prune env push
 
 help:
 	@echo ""
-	@echo "  make restart -- Stop, rebuild and start all services"
-	@echo "  make restart_prune -- Stop, clean, rebuild and start all services"
+	@echo "  make                 -- Create .env if missing, build and start all services"
+	@echo "  make down            -- Stop and remove containers"
+	@echo "  make restart         -- Stop, rebuild and start all services"
+	@echo "  make restart_prune   -- Stop, prune, rebuild and start all services"
 	@echo "  make push MSG=\"message\" -- git add + commit + push"
 	@echo ""
 
-restart:
+env:
+	@if [ ! -f .env ]; then cp .env.example .env && echo "Created .env from .env.example"; fi
+
+up: env
+	docker compose up -d --build
+
+down:
+	docker compose down
+
+restart: env
 	docker compose down
 	docker compose up -d --build
 
-restart_prune:
+restart_prune: env
 	docker compose down
 	docker system prune -af
 	docker compose up -d --build
