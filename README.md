@@ -2,6 +2,8 @@
 
 Docker-стек для оркестрации ML-пайплайнов: **Apache Airflow** управляет обучением и инференсом, **MLflow** хранит эксперименты и артефакты, **PostgreSQL** — метаданные Airflow, **Redis** — буфер между задачами, **ClickHouse** (внешний) — источник телеметрии и приёмник предсказаний.
 
+**Данные внешние:** этот репозиторий не поднимает БД с датасетом и не создаёт исходные таблицы. Обучение и инференс читают уже существующие **внешние таблицы** ClickHouse. Схема `snu` и таблицы `telemetry_*` — **только пример** (демо скважин SNU); в проде подставляются любые таблицы через `TRAINING_QUERY` / `PREDICTION_QUERY`. DDL и данные — в отдельном проекте `Clickhouse/`.
+
 Демо-DAG-и:
 
 | DAG | Файл | Назначение |
@@ -44,7 +46,7 @@ flowchart LR
 | PostgreSQL | Метаданные Airflow | localhost:5435 |
 | Redis | Передача DataFrame между задачами | localhost:6379 |
 
-ClickHouse — **внешний** контейнер в сети `clickhouse_default` (не поднимается этим compose). Обычно рядом лежит проект `Clickhouse/` (`mem_limit` ~5g и т.п.).
+ClickHouse — **внешний** контейнер в сети `clickhouse_default` (не поднимается этим compose). Обычно рядом лежит проект `Clickhouse/` (`mem_limit` ~5g и т.п.). Таблицы с данными тоже внешние: compose только подключается к уже заполненному ClickHouse.
 
 ## Структура проекта
 
@@ -86,7 +88,11 @@ Clickhouse/
 
 ## Данные ClickHouse (схема `snu`)
 
-Исходная телеметрия: `snu.snu_telemetry` — секундные ряды, скважины `SNU-001`…`SNU-005`, категориальные поля как **Enum8** (норма / `none` = 0), таргеты следующего шага: `target_oil_mixture_next_m3`, `target_aggregate_temp_next_c`, `target_scenario_next`, `target_anomaly_type_next`.
+Все таблицы ниже — **внешние**: DAG-и только `SELECT` / `INSERT` по именам из Airflow Variables. Схему, MV и наполнение данными этот стек не создаёт.
+
+**Telemetry — только пример.** Таблицы `snu.snu_telemetry`, `snu.telemetry_*` и MV из `telemetry_2.sql` показывают, как подключить внешний датасет. Стек не привязан к телеметрии скважин: достаточно сменить SQL в Variables.
+
+Исходная телеметрия (демо): `snu.snu_telemetry` — секундные ряды, скважины `SNU-001`…`SNU-005`, категориальные поля как **Enum8** (норма / `none` = 0), таргеты следующего шага: `target_oil_mixture_next_m3`, `target_aggregate_temp_next_c`, `target_scenario_next`, `target_anomaly_type_next`.
 
 Актуальные MV из `telemetry_2.sql` (Label Encoding через `toUInt8`, `well_id = SNU-001`):
 
@@ -106,7 +112,7 @@ Clickhouse/
 ### Требования
 
 - Docker и Docker Compose v2
-- Внешний ClickHouse в сети `clickhouse_default`, схема `snu`, MV из `telemetry_2.sql`
+- Внешний ClickHouse в сети `clickhouse_default` с уже существующими таблицами данных (для демо — схема `snu` и MV из `telemetry_2.sql`; telemetry здесь только пример)
 - На Windows: `.\make restart` (обёртки `make.ps1` / `make.cmd`)
 
 ### Запуск
