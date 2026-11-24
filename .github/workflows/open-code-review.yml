@@ -36,7 +36,7 @@ jobs:
           if [ -n "$OCR_LLM_TOKEN" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::OpenCodeReview не настроен: добавьте secrets OCR_LLM_URL и OCR_LLM_AUTH_TOKEN, чтобы включить ревью."
+            echo "::notice::OpenCodeReview не настроен: добавьте secret OCR_LLM_AUTH_TOKEN с API-ключом DeepSeek, чтобы включить ревью."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           fi
 
