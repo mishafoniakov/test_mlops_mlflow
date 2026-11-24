@@ -41,7 +41,7 @@ jobs:
 
       - name: Run OpenCodeReview
         if: steps.config.outputs.configured == 'true'
-        uses: alibaba/open-code-review@main
+        uses: alibaba/open-code-review@v1.14.3
         with:
           llm_url: ${{ secrets.OCR_LLM_URL }}
           llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
