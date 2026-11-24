@@ -5,10 +5,11 @@ name: OpenCodeReview PR Review
 # и workflow завершается успешно (зелёный no-op).
 #
 # Настройка (Settings -> Secrets and variables -> Actions):
-#   secret   OCR_LLM_URL            URL LLM-эндпоинта (OpenAI/Anthropic-совместимого)
-#   secret   OCR_LLM_AUTH_TOKEN     токен доступа к LLM
-#   variable OCR_LLM_MODEL          имя модели, например gpt-4.1 или deepseek-chat
-#   variable OCR_LLM_USE_ANTHROPIC  'true' для Anthropic, 'false' для OpenAI-совместимого
+# По умолчанию настроено на DeepSeek (OpenAI-совместимый API):
+#   secret   OCR_LLM_AUTH_TOKEN     API-ключ DeepSeek — обязателен, без него ревью пропускается
+# Необязательные переопределения:
+#   secret   OCR_LLM_URL            по умолчанию https://api.deepseek.com
+#   variable OCR_LLM_MODEL          по умолчанию deepseek-chat
 
 on:
   pull_request:
@@ -43,8 +44,8 @@ jobs:
         if: steps.config.outputs.configured == 'true'
         uses: alibaba/open-code-review@v1.14.3
         with:
-          llm_url: ${{ secrets.OCR_LLM_URL }}
+          llm_url: ${{ secrets.OCR_LLM_URL || 'https://api.deepseek.com' }}
           llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          llm_model: ${{ vars.OCR_LLM_MODEL }}
-          llm_use_anthropic: ${{ vars.OCR_LLM_USE_ANTHROPIC }}
+          llm_model: ${{ vars.OCR_LLM_MODEL || 'deepseek-chat' }}
+          llm_use_anthropic: 'false'
           language: Russian
